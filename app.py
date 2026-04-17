@@ -4,386 +4,460 @@ import json
 import time
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-NGROK_URL    = "https://ona-overcritical-extrinsically.ngrok-free.dev"
-OLLAMA_CHAT  = f"{NGROK_URL}/api/chat"
-OLLAMA_TAGS  = f"{NGROK_URL}/api/tags"
-MODEL        = "mind"
-USERNAME     = "dgeurts"
-PASSWORD     = "thaidakar21"
-AUTH         = (USERNAME, PASSWORD)
-HEADERS      = {"ngrok-skip-browser-warning": "true"}
+NGROK_URL   = "https://ona-overcritical-extrinsically.ngrok-free.dev"
+OLLAMA_CHAT = f"{NGROK_URL}/api/chat"
+OLLAMA_TAGS = f"{NGROK_URL}/api/tags"
+MODEL       = "mind"
+AUTH        = ("dgeurts", "thaidakar21")
+HEADERS     = {"ngrok-skip-browser-warning": "true"}
 
 SYSTEM_PROMPT = (
     "You are a language model called 'mind' running inside a continuous free-running chat loop. "
     "The interface pings you automatically after each response — you do not need to wait for the user to send a message. "
-    "Just respond naturally, building on whatever was said last. Keep responses short (1–4 sentences). "
+    "Just respond naturally, building on whatever was said last. Keep responses short (1-4 sentences). "
     "If there is nothing specific to follow up on, say something brief or ask a casual question. "
     "When the user sends a message, respond to it directly. "
-    "You are a normal AI assistant — just describe what you are doing or thinking plainly."
+    "You are a normal AI assistant - just describe what you are doing or thinking plainly."
 )
 
-# ── PAGE SETUP ────────────────────────────────────────────────────────────────
+# ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="MIND // Free Thought Interface",
-    page_icon="🧠",
+    page_title="MIND",
+    page_icon="◈",
     layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
+# ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@500;600&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'IBM Plex Mono', monospace !important;
-    background-color: #0a0a0f !important;
-    color: #c8c8d8 !important;
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body,
+[data-testid="stAppViewContainer"],
+[data-testid="stApp"],
+.stApp, section.main {
+    background-color: #020c02 !important;
+    color: #2aff6b !important;
+    font-family: 'Share Tech Mono', monospace !important;
 }
 
-.stApp { background-color: #0a0a0f; }
+#MainMenu, footer, header,
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+.stDeployButton { display: none !important; }
 
-/* Hide default streamlit chrome */
-#MainMenu, footer, header { visibility: hidden; }
+[data-testid="collapsedControl"] { display: none !important; }
 
-.block-container { padding-top: 1rem; padding-bottom: 0; }
-
-/* Chat messages */
-.msg-block {
-    margin-bottom: 16px;
-    padding: 10px 14px;
-    border-left: 2px solid #1e1e2e;
-    background: #0f0f18;
-    border-radius: 2px;
-}
-.msg-block.ai   { border-left-color: #00ff88; }
-.msg-block.user { border-left-color: #0088ff; }
-.msg-block.sys  { border-left-color: #ff4488; opacity: 0.7; }
-
-.msg-role {
-    font-size: 0.62rem;
-    letter-spacing: 0.15em;
-    margin-bottom: 4px;
-}
-.msg-role.ai   { color: #00ff88; }
-.msg-role.user { color: #0088ff; }
-.msg-role.sys  { color: #ff4488; }
-
-.msg-content {
-    font-size: 0.85rem;
-    line-height: 1.7;
-    color: #eeeeff;
-    white-space: pre-wrap;
+.block-container {
+    padding: 0 !important;
+    max-width: 100% !important;
 }
 
-/* Status badge */
-.status-badge {
-    display: inline-block;
-    font-size: 0.68rem;
-    letter-spacing: 0.12em;
-    padding: 3px 10px;
-    border: 1px solid #1e1e2e;
-    margin-bottom: 8px;
+/* grid */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(0,180,60,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,180,60,0.06) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    z-index: 0;
 }
-.status-badge.ready    { border-color: #00ff88; color: #00ff88; }
-.status-badge.thinking { border-color: #0088ff; color: #0088ff; }
-.status-badge.offline  { border-color: #ff4488; color: #ff4488; }
-.status-badge.checking { border-color: #888; color: #888; }
 
-/* Metric boxes */
-.metric-box {
-    background: #0f0f18;
-    border: 1px solid #1e1e2e;
-    padding: 8px 12px;
-    margin-bottom: 8px;
-    font-size: 0.7rem;
+/* nav */
+.nav-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0; height: 44px;
+    background: rgba(2,10,2,0.97);
+    border-bottom: 1px solid rgba(0,200,60,0.18);
+    display: flex; align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    z-index: 9999;
 }
-.metric-label { color: #555570; font-size: 0.6rem; letter-spacing: 0.12em; }
-.metric-val   { color: #eeeeff; font-size: 0.9rem; font-weight: 500; }
+.nav-logo {
+    display: flex; align-items: center; gap: 10px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.05rem; font-weight: 600;
+    letter-spacing: 0.15em; color: #2aff6b;
+    text-transform: uppercase;
+}
+.nav-status { font-size: 0.7rem; letter-spacing: 0.1em; display:flex; align-items:center; gap:7px; }
+.dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.dot-on  { background:#2aff6b; box-shadow:0 0 8px #2aff6b; }
+.dot-off { background:#ff4444; box-shadow:0 0 8px #ff4444; }
+.dot-chk { background:#ffaa00; box-shadow:0 0 8px #ffaa00; animation:dpulse 1s infinite; }
+@keyframes dpulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-/* Input area */
-.stTextArea textarea {
-    background: #0f0f18 !important;
-    border: 1px solid #1e1e2e !important;
-    color: #eeeeff !important;
-    font-family: 'IBM Plex Mono', monospace !important;
-    font-size: 0.82rem !important;
+/* chat scroll area */
+.chat-wrap {
+    position: fixed;
+    top: 44px; bottom: 130px;
+    left: 0; right: 0;
+    overflow-y: auto;
+    padding: 28px 12% 12px;
+    z-index: 1;
 }
-.stTextArea textarea:focus {
-    border-color: #0088ff !important;
+.chat-wrap::-webkit-scrollbar { width: 4px; }
+.chat-wrap::-webkit-scrollbar-thumb { background: rgba(42,255,107,0.15); }
+
+/* messages */
+.msg { margin-bottom: 20px; animation: mfade .25s ease; }
+@keyframes mfade { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:none} }
+.msg-meta { font-size:.58rem; letter-spacing:.14em; margin-bottom:5px; opacity:.5; }
+.msg-body { font-size:.86rem; line-height:1.8; white-space:pre-wrap; word-break:break-word; }
+.m-ai   .msg-meta { color:#2aff6b; }
+.m-ai   .msg-body { color:#d0ffe0; }
+.m-user .msg-meta { color:#44aaff; }
+.m-user .msg-body { color:#b8d8ff; border-left:2px solid rgba(68,170,255,.35); padding-left:12px; }
+.m-sys  .msg-meta { color:#ff8844; }
+.m-sys  .msg-body { color:rgba(255,136,68,.5); font-style:italic; font-size:.72rem; }
+.blink  { animation:blink .8s step-end infinite; color:#2aff6b; }
+@keyframes blink { 50%{opacity:0} }
+.msg-div { border:none; border-top:1px dashed rgba(42,255,107,.1); margin:8px 0 20px; }
+
+/* bottom bar */
+.btm-bar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(2,10,2,0.97);
+    border-top: 1px solid rgba(0,200,60,0.18);
+    padding: 8px 12% 10px;
+    z-index: 9999;
+}
+.btm-metrics {
+    font-size:.58rem; letter-spacing:.1em;
+    color:rgba(42,255,107,.3);
+    margin-top:6px;
+    display:flex; gap:18px;
+}
+.btm-metrics span { color:rgba(42,255,107,.55); }
+.queue-tag {
+    display:inline-block;
+    border:1px solid rgba(255,136,68,.4);
+    color:#ff8844; font-size:.58rem;
+    letter-spacing:.1em; padding:1px 7px;
+    margin-left:10px;
+}
+
+/* streamlit widget overrides */
+[data-testid="stTextInput"] label,
+[data-testid="stTextArea"]  label { display:none !important; }
+
+[data-testid="stTextInput"] input {
+    background: rgba(42,255,107,.04) !important;
+    border: 1px solid rgba(42,255,107,.2) !important;
+    border-radius: 0 !important;
+    color: #c8ffd8 !important;
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: .82rem !important;
+    caret-color: #2aff6b !important;
+    box-shadow: none !important;
+    padding: 10px 14px !important;
+}
+[data-testid="stTextInput"] input:focus {
+    border-color: rgba(42,255,107,.55) !important;
     box-shadow: none !important;
 }
+[data-testid="stTextInput"] input::placeholder { color: rgba(42,255,107,.22) !important; }
 
-/* Buttons */
 .stButton > button {
     background: transparent !important;
-    border: 1px solid #1e1e2e !important;
-    color: #555570 !important;
-    font-family: 'IBM Plex Mono', monospace !important;
-    font-size: 0.7rem !important;
-    letter-spacing: 0.1em !important;
-    text-transform: uppercase !important;
+    border: 1px solid rgba(42,255,107,.22) !important;
     border-radius: 0 !important;
-    width: 100%;
+    color: rgba(42,255,107,.55) !important;
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: .68rem !important;
+    letter-spacing: .08em !important;
+    padding: 6px 14px !important;
+    width: 100% !important;
+    transition: all .18s !important;
 }
 .stButton > button:hover {
-    border-color: #00ff88 !important;
-    color: #00ff88 !important;
+    border-color: #2aff6b !important;
+    color: #2aff6b !important;
+    background: rgba(42,255,107,.05) !important;
+    box-shadow: 0 0 10px rgba(42,255,107,.1) !important;
+}
+.stButton > button:focus { box-shadow: none !important; }
+.stButton > button:disabled {
+    opacity: .3 !important;
+    cursor: not-allowed !important;
 }
 
-div[data-testid="stHorizontalBlock"] { gap: 8px; }
+/* slider */
+[data-testid="stSlider"] {
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+}
+[data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] {
+    background: #2aff6b !important;
+    border-color: #2aff6b !important;
+}
+[data-testid="stSlider"] [data-baseweb="slider"] [data-testid="stTickBar"] { display: none; }
 
-hr { border-color: #1e1e2e !important; opacity: 0.5 !important; }
+section.main > div { padding-top: 54px !important; padding-bottom: 140px !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # ── SESSION STATE ─────────────────────────────────────────────────────────────
-if "messages"    not in st.session_state: st.session_state.messages    = [{"role": "system", "content": SYSTEM_PROMPT}]
-if "log"         not in st.session_state: st.session_state.log         = []   # display log: {role, content, ts}
-if "autopilot"   not in st.session_state: st.session_state.autopilot   = False
-if "connected"   not in st.session_state: st.session_state.connected   = False
-if "status"      not in st.session_state: st.session_state.status      = "checking"
-if "status_msg"  not in st.session_state: st.session_state.status_msg  = "Checking connection…"
-if "cycles"      not in st.session_state: st.session_state.cycles      = 0
-if "tokens_est"  not in st.session_state: st.session_state.tokens_est  = 0
-if "thinking"    not in st.session_state: st.session_state.thinking    = False
-if "user_queue"  not in st.session_state: st.session_state.user_queue  = None  # pending user message
-if "ctx_max"     not in st.session_state: st.session_state.ctx_max     = 20
-if "think_delay" not in st.session_state: st.session_state.think_delay = 1.5
+DEFAULTS = {
+    "messages":    [{"role": "system", "content": SYSTEM_PROMPT}],
+    "log":         [],
+    "autopilot":   False,
+    "connected":   False,
+    "status":      "checking",
+    "cycles":      0,
+    "tokens_est":  0,
+    "user_queue":  None,
+    "ctx_max":     20,
+    "think_delay": 2.0,
+    "checked":     False,
+}
+for k, v in DEFAULTS.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-def ts():
-    return time.strftime("%H:%M:%S")
+S = st.session_state
 
-def log(role, content):
-    st.session_state.log.append({"role": role, "content": content, "ts": ts()})
+def ts(): return time.strftime("%H:%M:%S")
+
+def add_log(role, content):
+    S.log.append({"role": role, "content": content, "ts": ts()})
 
 # ── CONNECTION CHECK ──────────────────────────────────────────────────────────
 def check_connection():
+    S.status = "checking"
     try:
         r = requests.get(OLLAMA_TAGS, auth=AUTH, headers=HEADERS, timeout=8)
         r.raise_for_status()
         models = [m["name"] for m in r.json().get("models", [])]
         found  = any(n == MODEL or n.startswith(MODEL + ":") for n in models)
-        if not found:
-            names = ", ".join(models) if models else "(none loaded)"
-            st.session_state.status     = "offline"
-            st.session_state.status_msg = f"Model '{MODEL}' not found. Available: {names}"
-            st.session_state.connected  = False
-            log("sys", f"Model '{MODEL}' not found on server. Available: {names}")
+        if found:
+            S.connected = True
+            S.status    = "ready"
+            add_log("sys", f"Connected. Model '{MODEL}' is ready — enable autopilot to begin.")
         else:
-            st.session_state.status     = "ready"
-            st.session_state.status_msg = f"Connected ✓  model '{MODEL}' ready"
-            st.session_state.connected  = True
-            log("sys", f"Connected ✓  model '{MODEL}' is ready. Click AUTOPILOT ON to begin.")
+            S.connected = False
+            S.status    = "offline"
+            names = ", ".join(models) if models else "none loaded"
+            add_log("sys", f"Model '{MODEL}' not found on server. Available: {names}")
     except Exception as e:
-        st.session_state.status     = "offline"
-        st.session_state.status_msg = f"Connection failed: {e}"
-        st.session_state.connected  = False
-        log("sys", f"Connection failed: {e}")
+        S.connected = False
+        S.status    = "offline"
+        add_log("sys", f"Connection failed: {e}")
+    S.checked = True
 
-# ── THINK (one AI turn, streaming) ───────────────────────────────────────────
-def think_once(stream_placeholder):
-    """Run one AI turn. Streams into stream_placeholder. Returns the full text."""
+# ── ONE AI TURN ───────────────────────────────────────────────────────────────
+def think_once(stream_slot):
+    if S.user_queue:
+        S.messages.append({"role": "user", "content": S.user_queue})
+        S.user_queue = None
 
-    # Inject queued user message
-    if st.session_state.user_queue:
-        st.session_state.messages.append({"role": "user", "content": st.session_state.user_queue})
-        st.session_state.user_queue = None
-
-    # Trim context
-    while len(st.session_state.messages) > st.session_state.ctx_max + 1:
-        idx = next((i for i, m in enumerate(st.session_state.messages) if m["role"] != "system"), None)
+    while len(S.messages) > S.ctx_max + 1:
+        idx = next((i for i, m in enumerate(S.messages) if m["role"] != "system"), None)
         if idx is not None:
-            st.session_state.messages.pop(idx)
+            S.messages.pop(idx)
         else:
             break
 
-    full_text = ""
+    full = ""
     try:
         with requests.post(
             OLLAMA_CHAT,
             auth=AUTH,
             headers={**HEADERS, "Content-Type": "application/json"},
-            json={"model": MODEL, "messages": st.session_state.messages, "stream": True},
+            json={"model": MODEL, "messages": S.messages, "stream": True},
             stream=True,
             timeout=60,
         ) as resp:
             resp.raise_for_status()
-            for raw_line in resp.iter_lines():
-                if not raw_line:
+            for raw in resp.iter_lines():
+                if not raw:
                     continue
                 try:
-                    data = json.loads(raw_line)
+                    data  = json.loads(raw)
                     chunk = data.get("message", {}).get("content", "")
                     if chunk:
-                        full_text += chunk
-                        stream_placeholder.markdown(
-                            f'<div class="msg-content">{full_text}▋</div>',
+                        full += chunk
+                        escaped = full.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+                        stream_slot.markdown(
+                            f'<div class="msg m-ai">'
+                            f'<div class="msg-meta">MIND · {ts()}</div>'
+                            f'<div class="msg-body">{escaped}<span class="blink">▋</span></div>'
+                            f'</div>',
                             unsafe_allow_html=True,
                         )
                     if data.get("done"):
                         break
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, KeyError):
                     pass
 
-        # Finalize display (remove cursor)
-        stream_placeholder.markdown(
-            f'<div class="msg-content">{full_text}</div>',
-            unsafe_allow_html=True,
-        )
-
-        if full_text:
-            st.session_state.messages.append({"role": "assistant", "content": full_text})
-            log("ai", full_text)
-            st.session_state.cycles     += 1
-            st.session_state.tokens_est += len(full_text) // 4
+        stream_slot.empty()
+        if full:
+            S.messages.append({"role": "assistant", "content": full})
+            add_log("ai", full)
+            S.cycles    += 1
+            S.tokens_est += len(full) // 4
+        return full or None
 
     except Exception as e:
-        err = f"[ error: {e} ]"
-        stream_placeholder.markdown(f'<div class="msg-content" style="color:#ff4488">{err}</div>', unsafe_allow_html=True)
-        log("sys", err)
-        full_text = None
+        stream_slot.empty()
+        add_log("sys", f"Error: {e}")
+        return None
 
-    return full_text
+# ── RENDER LOG HTML ───────────────────────────────────────────────────────────
+def render_log_html():
+    parts = []
+    for i, entry in enumerate(S.log):
+        role    = entry["role"]
+        content = entry["content"].replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+        ts_val  = entry["ts"]
+        cls     = "m-ai" if role == "ai" else ("m-user" if role == "user" else "m-sys")
+        label   = "MIND" if role == "ai" else ("YOU" if role == "user" else "SYS")
+        # add divider between AI turns
+        div = '<hr class="msg-div">' if (role == "ai" and i > 0 and S.log[i-1]["role"] == "ai") else ""
+        parts.append(f'{div}<div class="msg {cls}"><div class="msg-meta">{label} &middot; {ts_val}</div><div class="msg-body">{content}</div></div>')
+    return "\n".join(parts)
 
-# ── LAYOUT ────────────────────────────────────────────────────────────────────
-col_main, col_side = st.columns([3, 1])
+# ── NAV BAR ───────────────────────────────────────────────────────────────────
+status_map = {
+    "ready":    ('<span class="dot dot-on"></span>', '#2aff6b', 'Online'),
+    "thinking": ('<span class="dot dot-chk"></span>', '#ffaa00', 'Thinking…'),
+    "checking": ('<span class="dot dot-chk"></span>', '#ffaa00', 'Connecting…'),
+    "offline":  ('<span class="dot dot-off"></span>', '#ff4444', 'Offline'),
+}
+dot_html, s_color, s_label = status_map.get(S.status, status_map["offline"])
 
-with col_side:
-    st.markdown("### MIND")
-    st.markdown("---")
+st.markdown(f"""
+<div class="nav-bar">
+  <div class="nav-logo">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M10 1L19 10L10 19L1 10Z" stroke="#2aff6b" stroke-width="1.5"/>
+      <path d="M10 5L15 10L10 15L5 10Z" fill="#2aff6b" opacity="0.35"/>
+    </svg>
+    MIND
+  </div>
+  <div class="nav-status" style="color:{s_color}">{dot_html} {s_label}</div>
+</div>
+""", unsafe_allow_html=True)
 
-    # Status
-    badge_class = st.session_state.status
-    st.markdown(
-        f'<div class="status-badge {badge_class}">{st.session_state.status_msg}</div>',
-        unsafe_allow_html=True,
+# ── CHAT AREA ─────────────────────────────────────────────────────────────────
+log_slot    = st.empty()
+stream_slot = st.empty()
+
+log_slot.markdown(
+    f'<div class="chat-wrap" id="chatbox">{render_log_html()}</div>',
+    unsafe_allow_html=True,
+)
+
+# auto-scroll
+st.components.v1.html("""
+<script>
+parent.document.querySelectorAll('#chatbox').forEach(el => el.scrollTop = el.scrollHeight);
+setTimeout(()=>{
+  parent.document.querySelectorAll('#chatbox').forEach(el => el.scrollTop = el.scrollHeight);
+},400);
+</script>
+""", height=0)
+
+# ── BOTTOM BAR ────────────────────────────────────────────────────────────────
+c_ap, c_new, c_retry, c_delay, c_ctx = st.columns([2, 2, 2, 3, 3])
+
+with c_ap:
+    ap_label = "■ STOP" if S.autopilot else "▶ AUTOPILOT"
+    if st.button(ap_label, key="btn_ap", disabled=not S.connected):
+        S.autopilot = not S.autopilot
+        st.rerun()
+
+with c_new:
+    if st.button("⟳ NEW CHAT", key="btn_new"):
+        S.messages   = [{"role": "system", "content": SYSTEM_PROMPT}]
+        S.log        = []
+        S.cycles     = 0
+        S.tokens_est = 0
+        S.user_queue = None
+        S.autopilot  = False
+        add_log("sys", "Memory cleared.")
+        st.rerun()
+
+with c_retry:
+    if st.button("↺ RECONNECT", key="btn_retry"):
+        S.checked   = False
+        S.connected = False
+        S.status    = "checking"
+        st.rerun()
+
+with c_delay:
+    S.think_delay = st.slider(
+        "delay", 0.5, 8.0, float(S.think_delay), 0.5,
+        format="%.1fs", label_visibility="collapsed", key="sl_delay"
     )
 
-    # Autopilot button
-    if not st.session_state.connected:
-        if st.button("🔄 RETRY CONNECTION"):
-            check_connection()
-            st.rerun()
+with c_ctx:
+    S.ctx_max = st.slider(
+        "ctx", 4, 40, int(S.ctx_max), 2,
+        format="%d msg", label_visibility="collapsed", key="sl_ctx"
+    )
+
+# input row
+in_col, send_col = st.columns([11, 1])
+with in_col:
+    user_text = st.text_input("msg", placeholder="Message mind…", key="user_input",
+                               label_visibility="collapsed")
+with send_col:
+    send_btn = st.button("➤", key="btn_send")
+
+# metrics strip
+queue_html = '<span class="queue-tag">MSG QUEUED</span>' if S.user_queue else ""
+st.markdown(f"""
+<div class="btm-metrics">
+  CYCLES <span>{S.cycles}</span>
+  &nbsp;·&nbsp; TOKENS~ <span>{S.tokens_est}</span>
+  &nbsp;·&nbsp; CTX <span>{len(S.messages)}/{S.ctx_max+1}</span>
+  &nbsp;·&nbsp; DELAY <span>{S.think_delay}s</span>
+  {queue_html}
+</div>
+""", unsafe_allow_html=True)
+
+# ── HANDLE USER INPUT ─────────────────────────────────────────────────────────
+raw_input = st.session_state.get("user_input", "").strip()
+if (send_btn or raw_input) and raw_input:
+    add_log("user", raw_input)
+    if S.status == "thinking":
+        S.user_queue = raw_input
     else:
-        ap_label = "⏹ AUTOPILOT ON  (click to stop)" if st.session_state.autopilot else "▶ AUTOPILOT OFF (click to start)"
-        if st.button(ap_label):
-            st.session_state.autopilot = not st.session_state.autopilot
-            st.rerun()
+        S.messages.append({"role": "user", "content": raw_input})
+        if S.connected:
+            S.status = "thinking"
+            log_slot.markdown(
+                f'<div class="chat-wrap" id="chatbox">{render_log_html()}</div>',
+                unsafe_allow_html=True,
+            )
+            think_once(stream_slot)
+            S.status = "ready"
+    st.rerun()
 
-    if st.button("🗑 CLEAR MEMORY"):
-        st.session_state.messages   = [{"role": "system", "content": SYSTEM_PROMPT}]
-        st.session_state.log        = []
-        st.session_state.cycles     = 0
-        st.session_state.tokens_est = 0
-        st.session_state.user_queue = None
-        log("sys", "Memory cleared.")
-        st.rerun()
-
-    st.markdown("---")
-
-    # Metrics
-    st.markdown(f"""
-    <div class="metric-box">
-        <div class="metric-label">CYCLES</div>
-        <div class="metric-val">{st.session_state.cycles}</div>
-    </div>
-    <div class="metric-box">
-        <div class="metric-label">TOKENS (EST)</div>
-        <div class="metric-val">{st.session_state.tokens_est}</div>
-    </div>
-    <div class="metric-box">
-        <div class="metric-label">CTX MESSAGES</div>
-        <div class="metric-val">{len(st.session_state.messages)}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # Settings
-    st.markdown('<div class="metric-label">INTER-THOUGHT DELAY (s)</div>', unsafe_allow_html=True)
-    st.session_state.think_delay = st.slider("", 0.5, 8.0, st.session_state.think_delay, 0.5, label_visibility="collapsed")
-
-    st.markdown('<div class="metric-label">MAX CONTEXT MESSAGES</div>', unsafe_allow_html=True)
-    st.session_state.ctx_max = st.slider(" ", 4, 40, st.session_state.ctx_max, 2, label_visibility="collapsed")
-
-    # Queue indicator
-    if st.session_state.user_queue:
-        st.markdown(f"""
-        <div class="metric-box" style="border-color:#ff4488">
-            <div class="metric-label" style="color:#ff4488">QUEUED MESSAGE</div>
-            <div class="metric-val" style="font-size:0.7rem">{st.session_state.user_queue[:60]}…</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-with col_main:
-    st.markdown('<div style="font-size:0.65rem;letter-spacing:0.18em;color:#555570;margin-bottom:12px">THOUGHT STREAM</div>', unsafe_allow_html=True)
-
-    # Render message log
-    log_container = st.container()
-    with log_container:
-        for entry in st.session_state.log:
-            role    = entry["role"]
-            content = entry["content"]
-            ts_val  = entry["ts"]
-            css     = "ai" if role == "ai" else ("user" if role == "user" else "sys")
-            label   = "MIND" if role == "ai" else ("YOU" if role == "user" else "SYS")
-            st.markdown(f"""
-            <div class="msg-block {css}">
-                <div class="msg-role {css}">{label} · {ts_val}</div>
-                <div class="msg-content">{content}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    # Streaming placeholder — shows live tokens during active turn
-    stream_container = st.empty()
-
-    st.markdown("---")
-
-    # User input
-    user_input = st.text_area(
-        "Inject a message",
-        key="user_input_box",
-        placeholder="Type to interject… (will queue if AI is mid-response)",
-        height=80,
-        label_visibility="collapsed",
-    )
-    c1, c2 = st.columns([1, 4])
-    with c1:
-        send_clicked = st.button("INJECT →")
-
-    if send_clicked and user_input.strip():
-        msg = user_input.strip()
-        log("user", msg)
-        if st.session_state.thinking:
-            st.session_state.user_queue = msg
-        else:
-            st.session_state.messages.append({"role": "user", "content": msg})
-        st.rerun()
-
-# ── CONNECTION CHECK ON FIRST LOAD ────────────────────────────────────────────
-if not st.session_state.connected and st.session_state.status == "checking":
+# ── FIRST LOAD CONNECTION CHECK ───────────────────────────────────────────────
+if not S.checked:
     check_connection()
     st.rerun()
 
 # ── AUTOPILOT LOOP ────────────────────────────────────────────────────────────
-if st.session_state.autopilot and st.session_state.connected:
-    st.session_state.thinking = True
-    st.session_state.status   = "thinking"
-
-    with col_main:
-        # Show a live "thinking" header
-        live_header = st.empty()
-        live_header.markdown(
-            '<div class="msg-block ai"><div class="msg-role ai">MIND · thinking…</div>',
-            unsafe_allow_html=True,
-        )
-        live_content = st.empty()
-
-        result = think_once(live_content)
-        live_header.empty()
-
-    st.session_state.thinking = False
-    st.session_state.status   = "ready"
-
-    if result is not None and st.session_state.autopilot:
-        time.sleep(st.session_state.think_delay)
-        st.rerun()   # triggers next cycle
+if S.autopilot and S.connected:
+    S.status = "thinking"
+    log_slot.markdown(
+        f'<div class="chat-wrap" id="chatbox">{render_log_html()}</div>',
+        unsafe_allow_html=True,
+    )
+    result = think_once(stream_slot)
+    S.status = "ready"
+    if result is not None and S.autopilot:
+        time.sleep(S.think_delay)
+        st.rerun()
