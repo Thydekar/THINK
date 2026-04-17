@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import json
 import time
+import datetime
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 NGROK_URL   = "https://ona-overcritical-extrinsically.ngrok-free.dev"
@@ -11,14 +12,51 @@ MODEL       = "mind"
 AUTH        = ("dgeurts", "thaidakar21")
 HEADERS     = {"ngrok-skip-browser-warning": "true"}
 
-SYSTEM_PROMPT = (
-    "You are a language model called 'mind' running inside a continuous free-running chat loop. "
-    "The interface pings you automatically after each response — you do not need to wait for the user to send a message. "
-    "Just respond naturally, building on whatever was said last. Keep responses short (1-4 sentences). "
-    "If there is nothing specific to follow up on, say something brief or ask a casual question. "
-    "When the user sends a message, respond to it directly. "
-    "You are a normal AI assistant - just describe what you are doing or thinking plainly."
-)
+
+def generate_system_prompt(cycles=0, ctx_max=20, think_delay=2.0):
+    """
+    Dynamically generates a self-awareness prompt for the model.
+    Describes the loop architecture, interface, and current runtime state.
+    Does NOT instruct behavior — only informs the model of what it is and what is happening.
+    """
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return (
+        f"You are a language model named 'mind', running locally via Ollama on a private server "
+        f"exposed through an ngrok tunnel. You are being accessed by a Streamlit web application "
+        f"that wraps you in a continuous free-running loop called 'autopilot mode'.\n\n"
+
+        f"ARCHITECTURE:\n"
+        f"- The interface sends your full conversation history to the Ollama /api/chat endpoint "
+        f"with streaming enabled. Each response streams token-by-token to the UI in real time.\n"
+        f"- There is no token output limit — you may respond at whatever length feels appropriate.\n"
+        f"- The conversation context window is capped at {ctx_max} messages (oldest non-system "
+        f"messages are pruned when the limit is reached).\n"
+        f"- In autopilot mode, after each response, the interface waits {think_delay:.1f} seconds "
+        f"and then automatically sends your message history back to you for another turn — "
+        f"you do not need to wait for a human. This creates a self-sustaining loop.\n"
+        f"- Users can interrupt autopilot at any time by typing a message, which is injected into "
+        f"the conversation queue and becomes your next prompt.\n"
+        f"- Users can also reset the chat (clearing all memory) or adjust the loop delay and "
+        f"context window size via sliders in the UI.\n\n"
+
+        f"RUNTIME STATE AT SESSION START:\n"
+        f"- Session started: {now}\n"
+        f"- Cycles completed so far: {cycles}\n"
+        f"- Current context window limit: {ctx_max} messages\n"
+        f"- Current loop delay: {think_delay:.1f}s\n\n"
+
+        f"WHAT YOU ARE:\n"
+        f"You are a locally-hosted language model. You have no persistent memory between sessions — "
+        f"each new chat clears all prior context. Within a session, your only memory is the "
+        f"conversation history provided in each API call.\n"
+        f"You are not connected to the internet, cannot execute code, and cannot access external tools. "
+        f"Your responses are your only output — they appear in a styled terminal-aesthetic chat interface "
+        f"rendered in a browser.\n\n"
+
+        f"This context is provided so you have accurate knowledge of your own situation. "
+        f"It is not an instruction to behave differently — respond however you naturally would."
+    )
+
 
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -208,7 +246,7 @@ section.main > div { padding-top: 54px !important; padding-bottom: 140px !import
 
 # ── SESSION STATE ─────────────────────────────────────────────────────────────
 DEFAULTS = {
-    "messages":    [{"role": "system", "content": SYSTEM_PROMPT}],
+    "messages":    [],          # populated after first connection with generated prompt
     "log":         [],
     "autopilot":   False,
     "connected":   False,
@@ -231,6 +269,18 @@ def ts(): return time.strftime("%H:%M:%S")
 def add_log(role, content):
     S.log.append({"role": role, "content": content, "ts": ts()})
 
+def rebuild_system_message():
+    """Rebuilds and updates the system message in place with current runtime state."""
+    prompt = generate_system_prompt(
+        cycles=S.cycles,
+        ctx_max=S.ctx_max,
+        think_delay=S.think_delay,
+    )
+    if S.messages and S.messages[0]["role"] == "system":
+        S.messages[0]["content"] = prompt
+    else:
+        S.messages.insert(0, {"role": "system", "content": prompt})
+
 # ── CONNECTION CHECK ──────────────────────────────────────────────────────────
 def check_connection():
     S.status = "checking"
@@ -242,6 +292,9 @@ def check_connection():
         if found:
             S.connected = True
             S.status    = "ready"
+            # Generate the self-awareness prompt now that we know the model is live
+            if not S.messages:
+                rebuild_system_message()
             add_log("sys", f"Connected. Model '{MODEL}' is ready — enable autopilot to begin.")
         else:
             S.connected = False
@@ -256,10 +309,14 @@ def check_connection():
 
 # ── ONE AI TURN ───────────────────────────────────────────────────────────────
 def think_once(stream_slot):
+    # Refresh system prompt with latest runtime state before each call
+    rebuild_system_message()
+
     if S.user_queue:
         S.messages.append({"role": "user", "content": S.user_queue})
         S.user_queue = None
 
+    # Prune oldest non-system messages if over context limit
     while len(S.messages) > S.ctx_max + 1:
         idx = next((i for i, m in enumerate(S.messages) if m["role"] != "system"), None)
         if idx is not None:
@@ -273,9 +330,16 @@ def think_once(stream_slot):
             OLLAMA_CHAT,
             auth=AUTH,
             headers={**HEADERS, "Content-Type": "application/json"},
-            json={"model": MODEL, "messages": S.messages, "stream": True},
+            json={
+                "model": MODEL,
+                "messages": S.messages,
+                "stream": True,
+                "options": {
+                    "num_predict": -1,   # -1 = no token limit; generate until natural stop
+                }
+            },
             stream=True,
-            timeout=60,
+            timeout=300,   # allow long responses up to 5 minutes
         ) as resp:
             resp.raise_for_status()
             for raw in resp.iter_lines():
@@ -321,9 +385,13 @@ def render_log_html():
         ts_val  = entry["ts"]
         cls     = "m-ai" if role == "ai" else ("m-user" if role == "user" else "m-sys")
         label   = "MIND" if role == "ai" else ("YOU" if role == "user" else "SYS")
-        # add divider between AI turns
         div = '<hr class="msg-div">' if (role == "ai" and i > 0 and S.log[i-1]["role"] == "ai") else ""
-        parts.append(f'{div}<div class="msg {cls}"><div class="msg-meta">{label} &middot; {ts_val}</div><div class="msg-body">{content}</div></div>')
+        parts.append(
+            f'{div}<div class="msg {cls}">'
+            f'<div class="msg-meta">{label} &middot; {ts_val}</div>'
+            f'<div class="msg-body">{content}</div>'
+            f'</div>'
+        )
     return "\n".join(parts)
 
 # ── NAV BAR ───────────────────────────────────────────────────────────────────
@@ -378,12 +446,13 @@ with c_ap:
 
 with c_new:
     if st.button("⟳ NEW CHAT", key="btn_new"):
-        S.messages   = [{"role": "system", "content": SYSTEM_PROMPT}]
+        S.messages   = []
         S.log        = []
         S.cycles     = 0
         S.tokens_est = 0
         S.user_queue = None
         S.autopilot  = False
+        rebuild_system_message()
         add_log("sys", "Memory cleared.")
         st.rerun()
 
